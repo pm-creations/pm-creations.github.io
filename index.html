@@ -172,6 +172,7 @@ footer span{color:var(--gold-lt)}
     <option>Rakhi</option><option>Bandarwal</option><option>Toran</option>
     <option>Gift Set</option><option>Decoration</option><option>Other</option>
   </select>
+  <button class="btn btn-outline btn-sm" onclick="refreshProducts()" title="Reload latest products" style="border-color:rgba(0,0,0,.15);color:var(--brown);">🔄 Refresh</button>
   <span class="pcount" id="pcount"></span>
 </div>
 
@@ -615,26 +616,63 @@ function saveProduct() {
   if (isNaN(sale)||sale<=0){ showToast('⚠️ Enter valid sale price'); return; }
   if (sale > mrp)         { showToast('⚠️ Sale price cannot exceed MRP'); return; }
 
+  // Build the product object first
+  var newOrUpdated;
   if (eid) {
+    newOrUpdated = null;
     for (var i = 0; i < products.length; i++) {
       if (products[i].id === eid) {
         products[i].name = name; products[i].category = cat;
         products[i].stock = stock; products[i].mrp = mrp;
         products[i].sale = sale; products[i].description = desc;
         products[i].images = pendingImages.slice();
+        newOrUpdated = products[i];
         break;
       }
     }
   } else {
-    products.unshift({
+    newOrUpdated = {
       id: 'p' + Date.now(), name: name, category: cat,
       stock: stock, mrp: mrp, sale: sale,
       description: desc, images: pendingImages.slice(), createdAt: Date.now()
-    });
+    };
   }
 
-  dbSave(function(ok) {
-    if (ok) { closeModal(); renderGrid(); showToast('✅ Product saved to cloud!'); }
+  // CRITICAL: re-fetch latest data from cloud first to avoid overwriting
+  // products added from other devices/tabs since this page was opened
+  showSpinner('Syncing latest data...');
+  fetch(API_URL + '/latest', {
+    method: 'GET',
+    headers: { 'X-Master-Key': API_KEY, 'X-Bin-Meta': 'false' }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var cloudProducts = (data && Array.isArray(data.products)) ? data.products : [];
+
+    if (eid) {
+      // Update: find and replace in cloud list
+      var found = false;
+      for (var i = 0; i < cloudProducts.length; i++) {
+        if (cloudProducts[i].id === eid) {
+          cloudProducts[i] = newOrUpdated;
+          found = true;
+          break;
+        }
+      }
+      if (!found) cloudProducts.unshift(newOrUpdated);
+    } else {
+      // Add: prepend new product to latest cloud list
+      cloudProducts.unshift(newOrUpdated);
+    }
+
+    products = cloudProducts;
+    dbSave(function(ok) {
+      if (ok) { closeModal(); renderGrid(); showToast('✅ Product saved! Total: ' + products.length); }
+    });
+  })
+  .catch(function(e) {
+    hideSpinner();
+    showToast('❌ Could not sync. Check internet and try again.');
   });
 }
 
@@ -651,13 +689,29 @@ function closeConfirm() {
 }
 document.getElementById('confirm-delete-btn').onclick = function() {
   if (!deletePid) return;
-  var newArr = [];
-  for (var i = 0; i < products.length; i++) {
-    if (products[i].id !== deletePid) newArr.push(products[i]);
-  }
-  products = newArr;
-  dbSave(function(ok) {
-    if (ok) { closeConfirm(); renderGrid(); showToast('🗑️ Deleted'); }
+  var pidToDelete = deletePid;
+
+  // Sync with cloud first to avoid deleting from a stale list
+  showSpinner('Syncing latest data...');
+  fetch(API_URL + '/latest', {
+    method: 'GET',
+    headers: { 'X-Master-Key': API_KEY, 'X-Bin-Meta': 'false' }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var cloudProducts = (data && Array.isArray(data.products)) ? data.products : [];
+    var newArr = [];
+    for (var i = 0; i < cloudProducts.length; i++) {
+      if (cloudProducts[i].id !== pidToDelete) newArr.push(cloudProducts[i]);
+    }
+    products = newArr;
+    dbSave(function(ok) {
+      if (ok) { closeConfirm(); renderGrid(); showToast('🗑️ Deleted! Total: ' + products.length); }
+    });
+  })
+  .catch(function(e) {
+    hideSpinner();
+    showToast('❌ Could not sync. Check internet and try again.');
   });
 };
 
@@ -712,6 +766,16 @@ for (var mi = 0; mi < modals.length; mi++) {
       }
     });
   })(modals[mi]);
+}
+
+// ═══════════════════════════════════════════════════
+// MANUAL REFRESH
+// ═══════════════════════════════════════════════════
+function refreshProducts() {
+  dbLoad(function() {
+    renderGrid();
+    showToast('🔄 Refreshed! ' + products.length + ' product(s)');
+  });
 }
 
 // ═══════════════════════════════════════════════════
