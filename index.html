@@ -290,6 +290,12 @@ footer span{color:var(--gold-lt)}
 </div>
 
 <div id="toast"></div>
+<div id="error-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#7A1624;color:#fff;padding:1rem 1.5rem;font-family:monospace;font-size:.82rem;line-height:1.5;word-break:break-all;box-shadow:0 4px 12px rgba(0,0,0,.3);">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;max-width:1000px;margin:0 auto;">
+    <div id="error-banner-text" style="flex:1;"></div>
+    <button onclick="document.getElementById('error-banner').style.display='none'" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;flex-shrink:0;font-size:1rem;">✕</button>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════
@@ -327,6 +333,14 @@ function showToast(msg, isError) {
   clearTimeout(toastTimer);
   var duration = isError ? 8000 : 3500;
   toastTimer = setTimeout(function() { el.classList.remove('show'); }, duration);
+
+  // Errors ALSO go into a persistent banner that stays until manually closed
+  if (isError) {
+    var banner = document.getElementById('error-banner');
+    var bannerText = document.getElementById('error-banner-text');
+    bannerText.textContent = '⚠️ ' + msg + '  (screenshot this and send to support)';
+    banner.style.display = 'block';
+  }
 }
 
 // ═══════════════════════════════════════════════════
@@ -708,12 +722,12 @@ function saveProduct() {
 
     products = cloudProducts;
     dbSave(function(ok) {
+      // dbSave already shows its own specific error toast on failure —
+      // do NOT overwrite it with a generic message
       if (ok) {
         closeModal();
         renderGrid();
         showToast('✅ Product saved! Total: ' + products.length);
-      } else {
-        showToast('❌ Save step failed after sync — see error above', true);
       }
     });
   })
@@ -760,12 +774,11 @@ document.getElementById('confirm-delete-btn').onclick = function() {
     }
     products = newArr;
     dbSave(function(ok) {
+      // dbSave already shows its own specific error toast on failure
       if (ok) {
         closeConfirm();
         renderGrid();
         showToast('🗑️ Deleted! Total: ' + products.length);
-      } else {
-        showToast('❌ Delete save step failed — see error above', true);
       }
     });
   })
