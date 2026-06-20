@@ -318,12 +318,15 @@ var toastTimer;
 // ═══════════════════════════════════════════════════
 // TOAST — defined first so everything can use it
 // ═══════════════════════════════════════════════════
-function showToast(msg) {
+function showToast(msg, isError) {
   var el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
+  if (isError) { el.style.background = '#7A1624'; el.style.borderLeftColor = '#fff'; }
+  else { el.style.background = ''; el.style.borderLeftColor = ''; }
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function() { el.classList.remove('show'); }, 3500);
+  var duration = isError ? 8000 : 3500;
+  toastTimer = setTimeout(function() { el.classList.remove('show'); }, duration);
 }
 
 // ═══════════════════════════════════════════════════
@@ -371,41 +374,45 @@ function dbLoad(callback) {
   })
   .catch(function(e) {
     hideSpinner();
-    showToast('⚠️ LOAD FAILED: ' + e.message);
+    showToast('⚠️ LOAD FAILED: ' + e.message, true);
     products = [];
     if (callback) callback();
   });
 }
 
 function dbSave(callback) {
-  showSpinner('Saving...');
+  var payload = JSON.stringify({ products: products });
+  var sizeKB = Math.round(payload.length / 1024);
+
+  // JSONBin free tier limit is ~100KB per bin — warn before sending
+  if (sizeKB > 95) {
+    hideSpinner();
+    showToast('❌ Data too large (' + sizeKB + 'KB). JSONBin free limit is ~100KB. Remove some images or use smaller photos.', true);
+    if (callback) callback(false);
+    return;
+  }
+
+  showSpinner('Saving (' + sizeKB + 'KB)...');
   fetch(API_URL, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-    body: JSON.stringify({ products: products })
+    body: payload
   })
   .then(function(r) {
     if (!r.ok) {
       return r.text().then(function(t) {
-        throw new Error('HTTP ' + r.status + ': ' + t.substring(0, 150));
+        throw new Error('HTTP ' + r.status + ': ' + t.substring(0, 200));
       });
     }
     return r.json();
   })
   .then(function(data) {
     hideSpinner();
-    // Verify the response actually contains our products
-    var savedCount = (data && data.record && Array.isArray(data.record.products))
-      ? data.record.products.length
-      : null;
-    if (savedCount === null) {
-      showToast('⚠️ Save response unclear — please click 🔄 Refresh to verify');
-    }
     if (callback) callback(true);
   })
   .catch(function(e) {
     hideSpinner();
-    showToast('❌ SAVE FAILED: ' + e.message);
+    showToast('❌ SAVE FAILED: ' + e.message, true);
     if (callback) callback(false);
   });
 }
@@ -591,12 +598,18 @@ function handleImages(event) {
         var img = new Image();
         img.onload = function() {
           var canvas = document.createElement('canvas');
-          var maxW = 800, maxH = 800, w = img.width, h = img.height;
+          var maxW = 500, maxH = 500, w = img.width, h = img.height;
           if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
           if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-          pendingImages.push(canvas.toDataURL('image/jpeg', 0.72));
+          var compressed = canvas.toDataURL('image/jpeg', 0.5);
+          // Warn if still large (JSONBin free tier has size limits)
+          var sizeKB = Math.round(compressed.length / 1024);
+          if (sizeKB > 80) {
+            showToast('⚠️ Image is ' + sizeKB + 'KB — may be too large. Try a smaller photo.');
+          }
+          pendingImages.push(compressed);
           renderPreviews();
         };
         img.src = e.target.result;
@@ -700,13 +713,13 @@ function saveProduct() {
         renderGrid();
         showToast('✅ Product saved! Total: ' + products.length);
       } else {
-        showToast('❌ Save step failed after sync — see error above');
+        showToast('❌ Save step failed after sync — see error above', true);
       }
     });
   })
   .catch(function(e) {
     hideSpinner();
-    showToast('❌ SYNC FAILED: ' + e.message);
+    showToast('❌ SYNC FAILED: ' + e.message, true);
   });
 }
 
@@ -752,13 +765,13 @@ document.getElementById('confirm-delete-btn').onclick = function() {
         renderGrid();
         showToast('🗑️ Deleted! Total: ' + products.length);
       } else {
-        showToast('❌ Delete save step failed — see error above');
+        showToast('❌ Delete save step failed — see error above', true);
       }
     });
   })
   .catch(function(e) {
     hideSpinner();
-    showToast('❌ SYNC FAILED: ' + e.message);
+    showToast('❌ SYNC FAILED: ' + e.message, true);
   });
 };
 
