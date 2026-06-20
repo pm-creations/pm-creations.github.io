@@ -356,7 +356,14 @@ function dbLoad(callback) {
     method: 'GET',
     headers: { 'X-Master-Key': API_KEY, 'X-Bin-Meta': 'false' }
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.text().then(function(t) {
+        throw new Error('HTTP ' + r.status + ': ' + t.substring(0, 150));
+      });
+    }
+    return r.json();
+  })
   .then(function(data) {
     hideSpinner();
     products = (data && Array.isArray(data.products)) ? data.products : [];
@@ -364,7 +371,7 @@ function dbLoad(callback) {
   })
   .catch(function(e) {
     hideSpinner();
-    showToast('⚠️ Could not load. Check internet.');
+    showToast('⚠️ LOAD FAILED: ' + e.message);
     products = [];
     if (callback) callback();
   });
@@ -377,14 +384,28 @@ function dbSave(callback) {
     headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
     body: JSON.stringify({ products: products })
   })
-  .then(function(r) { return r.json(); })
-  .then(function() {
+  .then(function(r) {
+    if (!r.ok) {
+      return r.text().then(function(t) {
+        throw new Error('HTTP ' + r.status + ': ' + t.substring(0, 150));
+      });
+    }
+    return r.json();
+  })
+  .then(function(data) {
     hideSpinner();
+    // Verify the response actually contains our products
+    var savedCount = (data && data.record && Array.isArray(data.record.products))
+      ? data.record.products.length
+      : null;
+    if (savedCount === null) {
+      showToast('⚠️ Save response unclear — please click 🔄 Refresh to verify');
+    }
     if (callback) callback(true);
   })
   .catch(function(e) {
     hideSpinner();
-    showToast('❌ Save failed. Check internet.');
+    showToast('❌ SAVE FAILED: ' + e.message);
     if (callback) callback(false);
   });
 }
@@ -645,7 +666,14 @@ function saveProduct() {
     method: 'GET',
     headers: { 'X-Master-Key': API_KEY, 'X-Bin-Meta': 'false' }
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.text().then(function(t) {
+        throw new Error('Sync GET failed: HTTP ' + r.status + ' — ' + t.substring(0,150));
+      });
+    }
+    return r.json();
+  })
   .then(function(data) {
     var cloudProducts = (data && Array.isArray(data.products)) ? data.products : [];
 
@@ -667,12 +695,18 @@ function saveProduct() {
 
     products = cloudProducts;
     dbSave(function(ok) {
-      if (ok) { closeModal(); renderGrid(); showToast('✅ Product saved! Total: ' + products.length); }
+      if (ok) {
+        closeModal();
+        renderGrid();
+        showToast('✅ Product saved! Total: ' + products.length);
+      } else {
+        showToast('❌ Save step failed after sync — see error above');
+      }
     });
   })
   .catch(function(e) {
     hideSpinner();
-    showToast('❌ Could not sync. Check internet and try again.');
+    showToast('❌ SYNC FAILED: ' + e.message);
   });
 }
 
@@ -697,7 +731,14 @@ document.getElementById('confirm-delete-btn').onclick = function() {
     method: 'GET',
     headers: { 'X-Master-Key': API_KEY, 'X-Bin-Meta': 'false' }
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok) {
+      return r.text().then(function(t) {
+        throw new Error('Sync GET failed: HTTP ' + r.status + ' — ' + t.substring(0,150));
+      });
+    }
+    return r.json();
+  })
   .then(function(data) {
     var cloudProducts = (data && Array.isArray(data.products)) ? data.products : [];
     var newArr = [];
@@ -706,12 +747,18 @@ document.getElementById('confirm-delete-btn').onclick = function() {
     }
     products = newArr;
     dbSave(function(ok) {
-      if (ok) { closeConfirm(); renderGrid(); showToast('🗑️ Deleted! Total: ' + products.length); }
+      if (ok) {
+        closeConfirm();
+        renderGrid();
+        showToast('🗑️ Deleted! Total: ' + products.length);
+      } else {
+        showToast('❌ Delete save step failed — see error above');
+      }
     });
   })
   .catch(function(e) {
     hideSpinner();
-    showToast('❌ Could not sync. Check internet and try again.');
+    showToast('❌ SYNC FAILED: ' + e.message);
   });
 };
 
